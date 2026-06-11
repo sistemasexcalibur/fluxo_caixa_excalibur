@@ -212,11 +212,33 @@
     form textarea,
     form select { text-transform: uppercase; }
 
-  </style>
+  
+    .fc-toast { pointer-events:auto; padding:12px 18px; border-radius:8px; font-size:14px; font-weight:700; color:#fff; box-shadow:0 4px 20px rgba(0,0,0,.4); display:flex; align-items:center; gap:10px; min-width:240px; max-width:380px; animation:toastIn .25s ease; border:1px solid rgba(255,255,255,.15); }
+    .fc-toast.success { background:#065f46; border-color:#10b981; }
+    .fc-toast.error   { background:#7f1d1d; border-color:#ef4444; }
+    .fc-toast.warning { background:#78350f; border-color:#f59e0b; }
+    .fc-toast.info    { background:#1e3a5f; border-color:#3b82f6; }
+    .fc-toast.fade-out { animation:toastOut .3s ease forwards; }
+    @keyframes toastIn  { from{opacity:0;transform:translateX(30px)} to{opacity:1;transform:translateX(0)} }
+    @keyframes toastOut { from{opacity:1;transform:translateX(0)} to{opacity:0;transform:translateX(30px)} }
+</style>
 </head>
 <body>
   
   <!-- Banner de erro Supabase -->
+  
+  <div id="toastContainer" style="position:fixed;top:16px;right:16px;z-index:10000;display:flex;flex-direction:column;gap:8px;pointer-events:none"></div>
+  <div id="confirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9999;align-items:center;justify-content:center;padding:24px">
+    <div style="background:#2a1f16;border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:28px;max-width:380px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+      <div id="confirmIcon" style="font-size:32px;margin-bottom:12px;text-align:center">⚠️</div>
+      <div id="confirmMsg"  style="color:#fff7ec;font-size:15px;line-height:1.5;text-align:center;margin-bottom:24px;white-space:pre-line"></div>
+      <div style="display:flex;gap:10px;justify-content:center">
+        <button id="confirmCancel" style="flex:1;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff7ec;cursor:pointer;font-size:14px">Cancelar</button>
+        <button id="confirmOk" class="danger" style="flex:1;padding:10px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="dbErrorBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#7f1d1d;color:#fca5a5;padding:10px 16px;font-size:13px;font-weight:700;text-align:center;border-bottom:2px solid #dc2626"></div>
 
   <!-- Loading overlay -->
@@ -233,7 +255,16 @@
     form textarea,
     form select { text-transform: uppercase; }
 
-  </style>
+  
+    .fc-toast { pointer-events:auto; padding:12px 18px; border-radius:8px; font-size:14px; font-weight:700; color:#fff; box-shadow:0 4px 20px rgba(0,0,0,.4); display:flex; align-items:center; gap:10px; min-width:240px; max-width:380px; animation:toastIn .25s ease; border:1px solid rgba(255,255,255,.15); }
+    .fc-toast.success { background:#065f46; border-color:#10b981; }
+    .fc-toast.error   { background:#7f1d1d; border-color:#ef4444; }
+    .fc-toast.warning { background:#78350f; border-color:#f59e0b; }
+    .fc-toast.info    { background:#1e3a5f; border-color:#3b82f6; }
+    .fc-toast.fade-out { animation:toastOut .3s ease forwards; }
+    @keyframes toastIn  { from{opacity:0;transform:translateX(30px)} to{opacity:1;transform:translateX(0)} }
+    @keyframes toastOut { from{opacity:1;transform:translateX(0)} to{opacity:0;transform:translateX(30px)} }
+</style>
 
   <div class="app">
     <header>
@@ -383,6 +414,50 @@
 
   <script>
 
+    function showToast(msg, type, duration) {
+      type = type || 'info'; duration = duration || 4000;
+      var icons = {success:'✓', error:'✕', warning:'⚠', info:'ℹ'};
+      var el = document.createElement('div');
+      el.className = 'fc-toast ' + type;
+      el.innerHTML = '<span style="font-size:18px">' + (icons[type]||'ℹ') + '</span><span>' + msg + '</span>';
+      var c = document.getElementById('toastContainer');
+      if (c) c.appendChild(el);
+      setTimeout(function() {
+        el.classList.add('fade-out');
+        setTimeout(function(){ el.remove(); }, 320);
+      }, duration);
+    }
+
+    function showDbError(msg) {
+      showToast(msg, 'error', 7000);
+      console.error('[supabase]', msg);
+    }
+
+    var _confirmResolve = null;
+    function confirmar(msg, icon) {
+      return new Promise(function(resolve) {
+        _confirmResolve = resolve;
+        var el = document.getElementById('confirmMsg');
+        var ic = document.getElementById('confirmIcon');
+        var modal = document.getElementById('confirmModal');
+        if (el) el.textContent = msg;
+        if (ic) ic.textContent = icon || '⚠️';
+        if (modal) modal.style.display = 'flex';
+      });
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+      document.getElementById('confirmOk').addEventListener('click', function() {
+        document.getElementById('confirmModal').style.display = 'none';
+        if (_confirmResolve) { _confirmResolve(true); _confirmResolve = null; }
+      });
+      document.getElementById('confirmCancel').addEventListener('click', function() {
+        document.getElementById('confirmModal').style.display = 'none';
+        if (_confirmResolve) { _confirmResolve(false); _confirmResolve = null; }
+      });
+    });
+
+
+
 
 
     // ══════════════════════════════════════════════════════
@@ -505,12 +580,7 @@
       };
     }
 
-    function showDbError(msg) {
-      const el = document.getElementById('dbErrorBanner');
-      if (el) { el.textContent = '⚠ ' + msg; el.style.display = 'block';
-        setTimeout(() => { el.style.display = 'none'; }, 7000); }
-      console.error('[supabase]', msg);
-    }
+// showDbError movida para o topo do script
 
 
     // Migrado para Supabase (schema fc) — localStorage não é mais usado
@@ -8779,8 +8849,8 @@
           const idx = +btn.dataset.catDel;
           const row = window._catRows[idx];
           if (!row) return;
-          if (!confirm(`Excluir a conta "${row.subcategory}" do cadastro?`)) return;
-          if (!confirm(`⚠ ATENÇÃO: Confirmar exclusão definitiva de "${row.subcategory}"?`)) return;
+          if (!await confirmar(`Excluir a conta "${row.subcategory}" do cadastro?`, '🗑')) return;
+          if (!await confirmar(`ATENÇÃO: Exclusão definitiva de "${row.subcategory}".\nEsta ação não pode ser desfeita.`, '⛔')) return;
           accountCatalog = accountCatalog.filter((r,i) => i !== idx);
           await saveAccountCatalog();
           refreshCatalogTable();
@@ -8825,13 +8895,14 @@
             method: 'PATCH', headers: {...SB_HDR, 'Prefer': 'return=minimal'},
             body: JSON.stringify(fields)
           });
+            showToast('Lançamento atualizado!', 'success');
         } catch(e) { showDbError('Erro ao atualizar: ' + e.message); }
       } else {
         // Novo lançamento
         records.push(rec);
         event.target.reset();
         refresh();
-        try { await sbPost('fc_lancamentos', toDb(rec)); }
+        try { await sbPost('fc_lancamentos', toDb(rec)); showToast('Lançamento salvo!', 'success'); }
         catch(e) { showDbError('Erro ao salvar: ' + e.message); }
       }
     }
@@ -8860,21 +8931,7 @@
         const rec = records.find(r => r.id === editBtn.dataset.edit);
         if (!rec) return;
         editingRecord = rec;
-        // Preencher o form com os dados do registro
-        const form = $('entryForm');
-        form.date.value = rec.date || '';
-        form.type.value = rec.type || 'Saída';
-        form.qty.value  = String(rec.qty || 1).replace('.', ',');
-        form.unit.value = String(rec.unit || '').replace('.', ',');
-        form.item.value = rec.item || '';
-        form.costCenter.value = rec.costCenter || '';
-        form.supplier.value   = rec.supplier   || '';
-        form.fleet.value      = rec.fleet      || '';
-        form.notes.value      = rec.notes      || '';
-        // Atualizar grupo/conta/subcategoria
-        $('entryGroup').value       = rec.group       || '';
-        $('entryAccount').value     = rec.account     || '';
-        $('entrySubcategory').value = rec.subcategory || '';
+        preencherFormEdicao(rec);
         // Sinalizar modo edição
         $('entryFormTitle').textContent = '✏ Editando lançamento';
         $('btnSaveLanc').textContent    = 'Salvar alterações';
@@ -8891,12 +8948,12 @@
       // Excluir
       const btn = event.target.closest('[data-delete]');
       if (!btn) return;
-      if (!confirm('Confirmar exclusão deste lançamento?')) return;
-      if (!confirm('⚠ ATENÇÃO: Esta ação é irreversível. Excluir definitivamente?')) return;
+      if (!await confirmar('Confirmar exclusão deste lançamento?', '🗑')) return;
+      if (!await confirmar('ATENÇÃO: Esta ação é irreversível.\nExcluir definitivamente este lançamento?', '⛔')) return;
       const id = btn.dataset.delete;
       records = records.filter(r => r.id !== id);
       refresh();
-      try { await sbDelete('fc_lancamentos', 'id=eq.' + id); }
+      try { await sbDelete('fc_lancamentos', 'id=eq.' + id); showToast('Lançamento excluído.', 'warning'); }
       catch(e) { showDbError('Erro ao excluir: ' + e.message); }
     }
 );
@@ -8956,8 +9013,8 @@
         btn.addEventListener('click', async () => {
           const cc = window._ccRows[+btn.dataset.ccDel];
           if (!cc) return;
-          if (!confirm(`Excluir o centro de custo "${cc.nome}"?`)) return;
-          if (!confirm(`⚠ ATENÇÃO: Confirmar exclusão definitiva de "${cc.nome}"?`)) return;
+          if (!await confirmar(`Excluir o centro de custo "${cc.nome}"?`, '🗑')) return;
+          if (!await confirmar(`ATENÇÃO: Exclusão definitiva de "${cc.nome}".\nEsta ação não pode ser desfeita.`, '⛔')) return;
           try {
             await sbDelete('fc_centros_custo', 'id=eq.' + cc.id);
             costCenters = costCenters.filter(r => r.id !== cc.id);
@@ -8996,8 +9053,48 @@
         $('ccForm').reset();
         refreshCostCentersTable();
         refreshCostCenterSelect();
+        showToast('Centro de custo cadastrado!', 'success');
       } catch(e) { showDbError('Erro ao salvar: ' + e.message); }
     });
+
+
+    function preencherFormEdicao(rec) {
+      var source = catalogRecords();
+      var uniq = function(arr){ return arr.filter(function(v,i,a){ return v && a.indexOf(v)===i; }); };
+
+      var grpSel = $('entryGroup');
+      var grupos = uniq(source.map(function(r){return r.group;}));
+      setRequiredOptions(grpSel, grupos, 'Selecione');
+      if (rec.group && grupos.indexOf(rec.group) === -1)
+        grpSel.innerHTML += '<option value="'+rec.group+'">'+rec.group+'</option>';
+      grpSel.value = rec.group || '';
+
+      var accSel = $('entryAccount');
+      var contas = uniq(source.filter(function(r){return !rec.group||r.group===rec.group;}).map(function(r){return r.account;}));
+      setRequiredOptions(accSel, contas, 'Selecione');
+      if (rec.account && contas.indexOf(rec.account) === -1)
+        accSel.innerHTML += '<option value="'+rec.account+'">'+rec.account+'</option>';
+      accSel.value = rec.account || '';
+
+      var subSel = $('entrySubcategory');
+      var subs = uniq(source.filter(function(r){return (!rec.group||r.group===rec.group)&&(!rec.account||r.account===rec.account);}).map(function(r){return r.subcategory;}));
+      setRequiredOptions(subSel, subs, 'Selecione');
+      if (rec.subcategory && subs.indexOf(rec.subcategory) === -1)
+        subSel.innerHTML += '<option value="'+rec.subcategory+'">'+rec.subcategory+'</option>';
+      subSel.value = rec.subcategory || '';
+
+      var typeField = document.querySelector('#entryForm [name="type"]');
+      if (typeField) typeField.value = rec.type || 'Saída';
+      var form = $('entryForm');
+      form.date.value       = rec.date       || '';
+      form.qty.value        = String(rec.qty || 1).replace('.', ',');
+      form.unit.value       = String(rec.unit || 0).replace('.', ',');
+      form.item.value       = rec.item       || '';
+      form.costCenter.value = rec.costCenter || '';
+      form.supplier.value   = rec.supplier   || '';
+      form.fleet.value      = rec.fleet      || '';
+      form.notes.value      = rec.notes      || '';
+    }
 
     function cancelEdit() {
       editingRecord = null;
@@ -9089,6 +9186,7 @@
     })();
 
   
+
 
 
 </script>
