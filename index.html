@@ -414,6 +414,7 @@
 
   <script>
 
+
     function showToast(msg, type, duration) {
       type = type || 'info'; duration = duration || 4000;
       var icons = {success:'✓', error:'✕', warning:'⚠', info:'ℹ'};
@@ -535,24 +536,25 @@
     }
     // DB → JS (snake_case → camelCase)
     function fromDb(row) {
+      var up = function(s){ return String(s ?? '').toUpperCase(); };
       return {
         id: row.id,
         date: row.date,
-        type: row.type,
-        group: row.group,
-        account: row.account,
-        subcategory: row.subcategory,
-        expenseType: row.expense_type || '',
+        type: row.type,         // 'Entrada'/'Saída' — mantém case para lógica
+        group: up(row.group),   // normaliza para maiúsculo (evita duplicata no matrix)
+        account: up(row.account),
+        subcategory: up(row.subcategory),
+        expenseType: up(row.expense_type),
         qty: Number(row.qty),
         unit: Number(row.unit),
         amount: row.amount !== null ? Number(row.amount) : undefined,
-        item: row.item || '',
-        costCenter: row.cost_center || '',
-        supplier: row.supplier || '',
-        payer: row.payer || '',
-        fleet: row.fleet || '',
-        odometer: row.odometer || '',
-        notes: row.notes || ''
+        item: up(row.item),
+        costCenter: up(row.cost_center),
+        supplier: up(row.supplier),
+        payer: up(row.payer),
+        fleet: up(row.fleet),
+        odometer: String(row.odometer || ''),
+        notes: up(row.notes)
       };
     }
     function catToDb(r, i) {
@@ -9186,6 +9188,7 @@
     })();
 
   
+
 
 
 
