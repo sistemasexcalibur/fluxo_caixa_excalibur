@@ -286,6 +286,7 @@
       <button class="tab-button" data-view="entriesView">Lançamentos</button>
       <button class="tab-button" data-view="accountsView">Contas contábeis</button>
       <button class="tab-button" data-view="costCentersView">Centros de custo</button>
+      <button class="tab-button" data-view="auditView">Auditoria</button>
     </nav>
 
     <div id="dashboardView" class="view active">
@@ -410,9 +411,67 @@
       </section>
     </div>
 
+
+    <!-- VIEW: AUDITORIA -->
+    <div id="auditView" class="view">
+      <section class="section" style="margin-top:12px">
+        <div class="section-title">
+          <span>Filtros</span>
+          <button id="btnRefreshAudit" class="btn-s" style="font-size:12px;padding:4px 10px">↻ Atualizar</button>
+        </div>
+        <div style="padding:12px;display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
+          <label style="display:grid;gap:4px;font-size:12px;font-weight:800;min-width:130px">
+            De
+            <input type="date" id="auditDe" style="font-size:13px">
+          </label>
+          <label style="display:grid;gap:4px;font-size:12px;font-weight:800;min-width:130px">
+            Até
+            <input type="date" id="auditAte" style="font-size:13px">
+          </label>
+          <label style="display:grid;gap:4px;font-size:12px;font-weight:800;min-width:160px">
+            Ação
+            <select id="auditAcao" style="font-size:13px">
+              <option value="">Todas</option>
+              <option value="CRIAR_LANCAMENTO">Criar Lançamento</option>
+              <option value="EDITAR_LANCAMENTO">Editar Lançamento</option>
+              <option value="EXCLUIR_LANCAMENTO">Excluir Lançamento</option>
+              <option value="CRIAR_CENTRO_CUSTO">Criar Centro de Custo</option>
+              <option value="EXCLUIR_CENTRO_CUSTO">Excluir Centro de Custo</option>
+              <option value="IMPORTAR_CATALOGO">Importar Catálogo</option>
+              <option value="EXCLUIR_CONTA_CATALOGO">Excluir Conta Catálogo</option>
+              <option value="EXPORTAR_CSV">Exportar CSV</option>
+              <option value="EXPORTAR_EXCEL">Exportar Excel</option>
+              <option value="BAIXAR_MODELO">Baixar Modelo CSV</option>
+              <option value="ACESSO">Acesso ao Sistema</option>
+            </select>
+          </label>
+          <button id="btnAuditFiltrar" class="btn btn-p" style="padding:8px 16px;font-size:13px">Filtrar</button>
+          <button id="btnAuditExportar" class="btn btn-s" style="padding:8px 16px;font-size:13px">⬇ CSV</button>
+        </div>
+      </section>
+      <section class="section" style="margin-top:12px">
+        <div class="section-title">
+          <span>Registro de atividades</span>
+          <span id="auditCount" style="font-size:12px;color:var(--muted);font-weight:400"></span>
+        </div>
+        <div class="table-wrap">
+          <table id="auditTable">
+            <thead><tr>
+              <th style="min-width:145px">Data/Hora</th>
+              <th style="min-width:160px">Ação</th>
+              <th>Entidade</th>
+              <th>Detalhes</th>
+            </tr></thead>
+            <tbody id="auditTbody"><tr><td colspan="4" class="empty">Carregando...</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
   </div>
 
   <script>
+
 
 
     function showToast(msg, type, duration) {
@@ -428,6 +487,136 @@
         setTimeout(function(){ el.remove(); }, 320);
       }, duration);
     }
+
+
+    // ════════════════════════════════════════════════════════
+    // AUDITORIA — log não-bloqueante de ações do usuário
+    // ════════════════════════════════════════════════════════
+    var _auditLogs = [];  // cache local
+
+    async function logAudit(acao, entidade, detalhes) {
+      var entry = {
+        acao: acao,
+        entidade: entidade || '',
+        detalhes: JSON.stringify(detalhes || {}),
+        created_at: new Date().toISOString()
+      };
+      _auditLogs.unshift(entry); // cache imediato para UI
+      try {
+        await fetch(SB_URL + '/rest/v1/fc_audit_logs', {
+          method: 'POST',
+          headers: Object.assign({}, SB_HDR, {'Prefer': 'return=minimal'}),
+          body: JSON.stringify([entry])
+        });
+      } catch(e) {
+        console.warn('[audit]', e.message);
+      }
+    }
+
+    async function carregarAudit(filtros) {
+      filtros = filtros || {};
+      var qs = '?order=created_at.desc&limit=500';
+      if (filtros.de)   qs += '&created_at=gte.' + filtros.de + 'T00:00:00';
+      if (filtros.ate)  qs += '&created_at=lte.' + filtros.ate + 'T23:59:59';
+      if (filtros.acao) qs += '&acao=eq.' + filtros.acao;
+      try {
+        var rows = await sbGet('fc_audit_logs', qs);
+        return rows;
+      } catch(e) {
+        showDbError('Erro ao carregar auditoria: ' + e.message);
+        return [];
+      }
+    }
+
+    function renderAuditTable(rows) {
+      var tbody = document.getElementById('auditTbody');
+      var count = document.getElementById('auditCount');
+      if (!tbody) return;
+      if (count) count.textContent = rows.length + ' registro' + (rows.length !== 1 ? 's' : '');
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty">Nenhum registro encontrado.</td></tr>';
+        return;
+      }
+      var LABELS = {
+        CRIAR_LANCAMENTO: '➕ Criar Lançamento',
+        EDITAR_LANCAMENTO: '✏ Editar Lançamento',
+        EXCLUIR_LANCAMENTO: '🗑 Excluir Lançamento',
+        CRIAR_CENTRO_CUSTO: '➕ Criar C. Custo',
+        EXCLUIR_CENTRO_CUSTO: '🗑 Excluir C. Custo',
+        IMPORTAR_CATALOGO: '📥 Importar Catálogo',
+        EXCLUIR_CONTA_CATALOGO: '🗑 Excluir Conta',
+        EXPORTAR_CSV: '📤 Exportar CSV',
+        EXPORTAR_EXCEL: '📤 Exportar Excel',
+        BAIXAR_MODELO: '⬇ Modelo CSV',
+        ACESSO: '🔑 Acesso'
+      };
+      var CORES = {
+        CRIAR_LANCAMENTO: '#065f46',
+        EDITAR_LANCAMENTO: '#1e3a5f',
+        EXCLUIR_LANCAMENTO: '#7f1d1d',
+        CRIAR_CENTRO_CUSTO: '#065f46',
+        EXCLUIR_CENTRO_CUSTO: '#7f1d1d',
+        IMPORTAR_CATALOGO: '#1e3a5f',
+        EXCLUIR_CONTA_CATALOGO: '#7f1d1d',
+        EXPORTAR_CSV: '#78350f',
+        EXPORTAR_EXCEL: '#78350f',
+        BAIXAR_MODELO: '#78350f',
+        ACESSO: '#374151'
+      };
+      tbody.innerHTML = rows.map(function(r) {
+        var dt = new Date(r.created_at);
+        var dtStr = dt.toLocaleDateString('pt-BR') + ' ' +
+                    dt.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+        var label = LABELS[r.acao] || r.acao;
+        var cor = CORES[r.acao] || '#374151';
+        var det = '';
+        try { var d = JSON.parse(r.detalhes || '{}'); det = Object.entries(d).map(function(kv){return '<b>'+kv[0]+':</b> '+kv[1];}).join(' | '); } catch(e) { det = r.detalhes || ''; }
+        return '<tr>'
+          + '<td style="white-space:nowrap;font-size:12px;color:var(--muted)">' + dtStr + '</td>'
+          + '<td><span style="font-size:12px;font-weight:700;padding:2px 8px;border-radius:20px;background:' + cor + ';color:#fff;white-space:nowrap">' + label + '</span></td>'
+          + '<td style="font-size:12px">' + escapeHtml(r.entidade || '') + '</td>'
+          + '<td style="font-size:11px;color:var(--muted);max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(r.detalhes || '') + '">' + det + '</td>'
+          + '</tr>';
+      }).join('');
+    }
+
+    function wireAuditView() {
+      var btnFiltrar = document.getElementById('btnAuditFiltrar');
+      var btnRefresh = document.getElementById('btnRefreshAudit');
+      var btnExport  = document.getElementById('btnAuditExportar');
+      if (btnFiltrar) btnFiltrar.addEventListener('click', async function() {
+        var de   = document.getElementById('auditDe').value;
+        var ate  = document.getElementById('auditAte').value;
+        var acao = document.getElementById('auditAcao').value;
+        var rows = await carregarAudit({de:de, ate:ate, acao:acao});
+        renderAuditTable(rows);
+      });
+      if (btnRefresh) btnRefresh.addEventListener('click', async function() {
+        var rows = await carregarAudit();
+        renderAuditTable(rows);
+      });
+      if (btnExport) btnExport.addEventListener('click', async function() {
+        var rows = await carregarAudit();
+        var lines = ['data_hora,acao,entidade,detalhes'];
+        rows.forEach(function(r) {
+          var dt = new Date(r.created_at).toLocaleString('pt-BR');
+          lines.push([dt, r.acao, r.entidade, '"' + (r.detalhes||'').replace(/"/g,'""') + '"'].join(','));
+        });
+        download('auditoria.csv', lines.join('\n'), 'text/csv;charset=utf-8');
+      });
+    }
+
+    // Carregar logs quando a aba Auditoria é aberta
+    document.addEventListener('DOMContentLoaded', function() {
+      document.querySelectorAll('.tab-button').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          if (btn.dataset.view === 'auditView') {
+            carregarAudit().then(function(rows) { renderAuditTable(rows); });
+          }
+        });
+      });
+      wireAuditView();
+    });
 
     function showDbError(msg) {
       showToast(msg, 'error', 7000);
@@ -8521,6 +8710,7 @@
       try {
         await sbDelete('fc_catalogo_contabil', 'id=gte.0');
         if (accountCatalog.length) {
+          logAudit('IMPORTAR_CATALOGO', 'fc_catalogo_contabil', {contas: accountCatalog.length});
           const rows = accountCatalog.map(catToDb);
           // Supabase aceita até 1000 por POST — dividir em lotes
           for (let i = 0; i < rows.length; i += 500) {
@@ -8852,6 +9042,7 @@
           const row = window._catRows[idx];
           if (!row) return;
           if (!await confirmar(`Excluir a conta "${row.subcategory}" do cadastro?`, '🗑')) return;
+          logAudit('EXCLUIR_CONTA_CATALOGO', row.subcategory, {grupo: row.group, conta: row.account});
           if (!await confirmar(`ATENÇÃO: Exclusão definitiva de "${row.subcategory}".\nEsta ação não pode ser desfeita.`, '⛔')) return;
           accountCatalog = accountCatalog.filter((r,i) => i !== idx);
           await saveAccountCatalog();
@@ -8898,13 +9089,16 @@
             body: JSON.stringify(fields)
           });
             showToast('Lançamento atualizado!', 'success');
+            logAudit('EDITAR_LANCAMENTO', rec.date + ' | ' + rec.type, {item: rec.item, valor: rec.unit * rec.qty, id: rec.id});
         } catch(e) { showDbError('Erro ao atualizar: ' + e.message); }
       } else {
         // Novo lançamento
         records.push(rec);
         event.target.reset();
         refresh();
-        try { await sbPost('fc_lancamentos', toDb(rec)); showToast('Lançamento salvo!', 'success'); }
+        try { await sbPost('fc_lancamentos', toDb(rec));
+          showToast('Lançamento salvo!', 'success');
+          logAudit('CRIAR_LANCAMENTO', rec.date + ' | ' + rec.type, {item: rec.item, valor: rec.unit * rec.qty, grupo: rec.group}); }
         catch(e) { showDbError('Erro ao salvar: ' + e.message); }
       }
     }
@@ -8955,7 +9149,9 @@
       const id = btn.dataset.delete;
       records = records.filter(r => r.id !== id);
       refresh();
-      try { await sbDelete('fc_lancamentos', 'id=eq.' + id); showToast('Lançamento excluído.', 'warning'); }
+      try { await sbDelete('fc_lancamentos', 'id=eq.' + id);
+        showToast('Lançamento excluído.', 'warning');
+        logAudit('EXCLUIR_LANCAMENTO', 'id: ' + id, {}); }
       catch(e) { showDbError('Erro ao excluir: ' + e.message); }
     }
 );
@@ -9056,6 +9252,7 @@
         refreshCostCentersTable();
         refreshCostCenterSelect();
         showToast('Centro de custo cadastrado!', 'success');
+        logAudit('CRIAR_CENTRO_CUSTO', nome, {descricao: desc});
       } catch(e) { showDbError('Erro ao salvar: ' + e.message); }
     });
 
@@ -9110,14 +9307,14 @@
     }
     $('clearSelection').addEventListener('click', () => { selected = null; expanded = new Set(); refreshKpis(); refreshMatrix(); refreshDetails(); });
     ['yearFilter', 'monthFilter', 'fleetFilter', 'supplierFilter', 'searchFilter'].forEach(id => $(id).addEventListener('input', () => { refreshKpis(); refreshMatrix(); refreshDetails(); }));
-    $('exportCsv').addEventListener('click', () => download('fluxo-caixa.csv', toCsv(filteredRecords()), 'text/csv;charset=utf-8'));
-    $('exportExcel').addEventListener('click', () => download('fluxo-caixa.xls', toExcelHtml(filteredRecords()), 'application/vnd.ms-excel;charset=utf-8'));
+    $('exportCsv').addEventListener('click', () => { logAudit('EXPORTAR_CSV', 'fluxo-caixa.csv', {registros: records.length}); download('fluxo-caixa.csv', toCsv(filteredRecords()), 'text/csv;charset=utf-8'); });
+    $('exportExcel').addEventListener('click', () => { logAudit('EXPORTAR_EXCEL', 'fluxo-caixa.xls', {registros: records.length}); download('fluxo-caixa.xls', toExcelHtml(filteredRecords()), 'application/vnd.ms-excel;charset=utf-8'); });
     $('exportAllExcel').addEventListener('click', () => download('base-fluxo-caixa.xls', toExcelHtml(records), 'application/vnd.ms-excel;charset=utf-8'));
     $('exportCatalogExcel').addEventListener('click', () => download('cadastro-contas-contabeis.xls', catalogToExcelHtml(), 'application/vnd.ms-excel;charset=utf-8'));
     $('importCatalog').addEventListener('click', () => $('catalogFileInput').click());
 // clearCatalog removido — use exclusão individual
     $('restoreExcel').addEventListener('click', () => $('fileInput').click());
-    $('exportSample').addEventListener('click', () => {
+    $('exportSample').addEventListener('click', () => { logAudit('BAIXAR_MODELO', 'modelo-lancamentos.csv', {});
       const header = 'data,tipo,grupo,conta,subcategoria,qtd,unitario,item,centro_custo,fornecedor,frota,observacao';
       const rows = [
         '2026-01-10,Entrada,Entradas,Recebimentos,Servicos prestados,1,18500,FATURAMENTO MENSAL,ADM,CLIENTE EXEMPLO,EXCALIBUR,RECEITA OPERACIONAL',
@@ -9188,6 +9385,7 @@
     })();
 
   
+
 
 
 
