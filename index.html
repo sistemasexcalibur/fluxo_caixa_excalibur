@@ -329,14 +329,14 @@
           <div class="section-title"><span id="entryFormTitle">Novo lançamento</span></div>
           <form id="entryForm">
             <label>Data<input required type="date" name="date"></label>
-            <label>Tipo<select name="type"><option>Saída</option><option>Entrada</option></select></label>
+            <label>Tipo<select required name="type"><option value="">Selecione...</option><option value="Saída">Saída</option><option value="Entrada">Entrada</option></select></label>
             <label>Grupo<select required name="group" id="entryGroup"></select></label>
             <label>Subgrupo<select required name="account" id="entryAccount"></select></label>
             <label class="full">Conta contábil<select required name="subcategory" id="entrySubcategory"></select></label>
-            <label>Qtd.<input type="text" inputmode="decimal" name="qty" value="1" placeholder="1"></label>
+            <label>Qtd.<input required type="text" inputmode="decimal" name="qty" value="1" placeholder="1"></label>
             <label>Valor unitário<input required type="text" inputmode="decimal" name="unit" placeholder="0,00"></label>
             <label class="full">Item<input required name="item" placeholder="Descrição do item"></label>
-            <label>Centro de custo<select name="costCenter" id="entryCostCenter"><option value="">Selecione ou deixe em branco...</option></select></label>
+            <label>Centro de custo<select required name="costCenter" id="entryCostCenter"><option value="">Selecione ou deixe em branco...</option></select></label>
             <label>Fornecedor<input name="supplier"></label>
             <label>Frota / Caixa<input name="fleet" placeholder="Ex.: EXCALIBUR"></label>
             <label class="full">Observação<textarea name="notes"></textarea></label>
@@ -9070,6 +9070,10 @@
     $('entryForm').addEventListener('submit', async event => {
       event.preventDefault();
       const data = Object.fromEntries(new FormData(event.target).entries());
+      // Validações obrigatórias
+      if (!data.type)       { showToast('Selecione o tipo (Entrada ou Saída)', 'warning'); return; }
+      if (!data.costCenter) { showToast('Selecione o centro de custo', 'warning'); return; }
+      if (!data.qty || isNaN(parseFloat(String(data.qty).replace(',','.'))) ) { showToast('Informe a quantidade', 'warning'); return; }
       const rec = normalizeRecord({
         id: editingRecord ? editingRecord.id : undefined,
         data: data.date, tipo: data.type, grupo: data.group, conta: data.account,
