@@ -9209,8 +9209,41 @@
       table.innerHTML = '<thead><tr><th>Nome</th><th>Descrição</th><th></th></tr></thead><tbody>' +
         costCenters.map((cc, i) =>
           `<tr><td><strong>${escapeHtml(cc.nome)}</strong></td><td>${escapeHtml(cc.descricao)}</td>` +
-          `<td style="white-space:nowrap"><button class="danger" style="font-size:11px;padding:3px 7px" data-cc-del="${i}">✕ Excluir</button></td></tr>`
+          `<td style="white-space:nowrap;display:flex;gap:6px">`+
+          `<button class="btn-s" style="font-size:11px;padding:3px 8px" data-cc-edit="${i}">✏ Editar</button>`+
+          `<button class="danger" style="font-size:11px;padding:3px 7px" data-cc-del="${i}">✕ Excluir</button>`+
+          `</td></tr>`
         ).join('') + '</tbody>';
+      table.querySelectorAll('[data-cc-edit]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const cc = window._ccRows[+btn.dataset.ccEdit];
+          if (!cc) return;
+          $('ccNome').value = cc.nome;
+          $('ccDesc').value = cc.descricao || '';
+          window._editingCcId = cc.id;
+          const submitBtn = $('ccForm').querySelector('button[type=submit]');
+          submitBtn.textContent = '✓ Salvar edição';
+          submitBtn.className = 'warning';
+          let cancelBtn = $('ccCancelEdit');
+          if (!cancelBtn) {
+            cancelBtn = document.createElement('button');
+            cancelBtn.type = 'button';
+            cancelBtn.id = 'ccCancelEdit';
+            cancelBtn.textContent = 'Cancelar';
+            cancelBtn.style.cssText = 'height:38px';
+            cancelBtn.addEventListener('click', () => {
+              $('ccNome').value = '';
+              $('ccDesc').value = '';
+              window._editingCcId = null;
+              submitBtn.textContent = '+ Adicionar';
+              submitBtn.className = 'success';
+              cancelBtn.remove();
+            });
+            submitBtn.insertAdjacentElement('afterend', cancelBtn);
+          }
+          $('ccNome').focus();
+        });
+      });
       table.querySelectorAll('[data-cc-del]').forEach(btn => {
         btn.addEventListener('click', async () => {
           const cc = window._ccRows[+btn.dataset.ccDel];
@@ -9241,6 +9274,30 @@
       const nome = $('ccNome').value.trim().toUpperCase();
       const desc = $('ccDesc').value.trim().toUpperCase();
       if (!nome) { showDbError('Nome do centro de custo é obrigatório'); return; }
+
+      // MODO EDIÇÃO
+      if (window._editingCcId) {
+        const id = window._editingCcId;
+        try {
+          await fetch(SB_URL+'/rest/v1/fc_centros_custo?id=eq.'+id, {
+            method: 'PATCH',
+            headers: SB_HDR,
+            body: JSON.stringify({nome, descricao: desc})
+          });
+          const idx2 = costCenters.findIndex(c => c.id === id);
+          if (idx2 >= 0) costCenters[idx2] = {id, nome, descricao: desc};
+          refreshCostCentersTable();
+          refreshCostCenterSelect();
+          showToast('Centro de custo atualizado!', 'success');
+          logAudit('EDITAR_CENTRO_CUSTO', nome, {id, descricao: desc});
+          $('ccNome').value = ''; $('ccDesc').value = '';
+          window._editingCcId = null;
+          const sb2 = $('ccForm').querySelector('button[type=submit]');
+          sb2.textContent = '+ Adicionar'; sb2.className = 'success';
+          const cb2 = $('ccCancelEdit'); if (cb2) cb2.remove();
+        } catch(e) { showDbError('Erro ao atualizar: ' + e.message); }
+        return;
+      }
       if (costCenters.some(cc => cc.nome === nome)) {
         showDbError('Já existe um centro de custo com este nome'); return;
       }
