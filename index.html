@@ -66,10 +66,12 @@
 
     .filters {
       display: grid;
-      grid-template-columns: repeat(5, minmax(120px, 1fr));
+      grid-template-columns: repeat(4, minmax(110px, 1fr));
       gap: 10px;
       min-width: 0;
     }
+    .filters input[type=date]{min-width:0;width:100%}
+    .filters #clearPeriod{width:100%}
 
     .tabs {
       display: flex;
@@ -158,7 +160,7 @@
     .matrix-wrap, .table-wrap { overflow: auto; max-height: 390px; }
     table { width: 100%; border-collapse: collapse; min-width: 760px; }
     th, td { border-right: 1px solid rgba(255,255,255,.2); border-bottom: 1px solid rgba(255,255,255,.14); padding: 6px 8px; }
-    th { background: rgba(255,255,255,.12); position: sticky; top: 0; z-index: 1; font-size: 13px; }
+    th { background: #4a2f1d; background-image: linear-gradient(rgba(255,255,255,.12), rgba(255,255,255,.12)); position: sticky; top: 0; z-index: 2; font-size: 13px; box-shadow: 0 1px 0 rgba(255,255,255,.14); }
     td { font-size: 13px; vertical-align: top; }
     td.num, th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
     tr.clickable { cursor: pointer; }
@@ -201,7 +203,9 @@
 
     @media (max-width: 680px) {
       .app { padding: 8px; }
-      .filters, .kpis, form { grid-template-columns: 1fr; }
+      .kpis, form { grid-template-columns: 1fr; }
+      .filters { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .filters label:last-of-type { grid-column: span 2; }
       form .full { grid-column: auto; }
       .matrix-wrap, .table-wrap { max-height: 330px; }
     }
@@ -221,6 +225,7 @@
     .fc-toast.fade-out { animation:toastOut .3s ease forwards; }
     @keyframes toastIn  { from{opacity:0;transform:translateX(30px)} to{opacity:1;transform:translateX(0)} }
     @keyframes toastOut { from{opacity:1;transform:translateX(0)} to{opacity:0;transform:translateX(30px)} }
+
 </style>
 </head>
 <body>
@@ -277,8 +282,11 @@
         <label>Mês<select id="monthFilter"></select></label>
         <label>Frota<select id="fleetFilter"></select></label>
         <label>Fornecedor<select id="supplierFilter"></select></label>
-        <label>Busca<input id="searchFilter" placeholder="Item, observação, conta..."></label>
-      </div>
+        <label>De<input type="date" id="dateFromFilter"></label>
+          <label>Até<input type="date" id="dateToFilter"></label>
+          <label>Busca<input id="searchFilter" placeholder="Item, observação, conta..."></label>
+          <label style="align-self:flex-end"><button type="button" id="clearPeriod" class="ghost" style="height:34px;white-space:nowrap">Limpar período</button></label>
+        </div>
     </header>
 
     <nav class="tabs" aria-label="Telas">
@@ -8741,6 +8749,8 @@
       const f = norm($('fleetFilter').value);
       const s = norm($('supplierFilter').value);
       const q = norm($('searchFilter').value);
+      const dFrom = ($('dateFromFilter') || {}).value || '';
+      const dTo   = ($('dateToFilter')   || {}).value || '';
       return records.filter(r => {
         const d = new Date(r.date + 'T12:00:00');
         const hay = norm([r.group, r.account, r.subcategory, r.item, r.notes, r.supplier, r.fleet, r.costCenter].join(' '));
@@ -8750,6 +8760,8 @@
           (selected.level === 'sub' && r.group === selected.group && r.account === selected.account && r.subcategory === selected.subcategory);
         return (!y || String(d.getFullYear()) === y) &&
           (!m || String(d.getMonth() + 1) === m) &&
+          (!dFrom || r.date >= dFrom) &&
+          (!dTo   || r.date <= dTo) &&
           (!f || norm(r.fleet).includes(f)) &&
           (!s || norm(r.supplier).includes(s)) &&
           (!q || hay.includes(q)) &&
@@ -9366,8 +9378,44 @@
       const cancelBtn = $('btnCancelEdit');
       if (cancelBtn) cancelBtn.style.display = 'none';
     }
+    // Limpar período (De/Até + Ano/Mês)
+    const _cp = $('clearPeriod');
+    if (_cp) _cp.addEventListener('click', () => {
+      ['dateFromFilter','dateToFilter'].forEach(id => { if ($(id)) $(id).value = ''; });
+      if ($('yearFilter'))  $('yearFilter').value  = '';
+      if ($('monthFilter')) $('monthFilter').value = '';
+      refreshKpis(); refreshMatrix(); refreshDetails();
+      if (typeof showToast === 'function') showToast('Período limpo', 'info');
+    });
+
+    // Ao definir um intervalo, Ano/Mês saem de cena para não conflitar
+    ['dateFromFilter','dateToFilter'].forEach(id => {
+      const el = $(id);
+      if (!el) return;
+      el.addEventListener('change', () => {
+        const temIntervalo = ($('dateFromFilter').value || $('dateToFilter').value);
+        if (temIntervalo) {
+          if ($('yearFilter'))  $('yearFilter').value  = '';
+          if ($('monthFilter')) $('monthFilter').value = '';
+        }
+        // Se inverteu as datas, corrige
+        const a = $('dateFromFilter').value, b = $('dateToFilter').value;
+        if (a && b && b < a) { $('dateFromFilter').value = b; $('dateToFilter').value = a; }
+        refreshKpis(); refreshMatrix(); refreshDetails();
+      });
+    });
+
+    // Ao escolher Ano/Mês, o intervalo é descartado
+    ['yearFilter','monthFilter'].forEach(id => {
+      const el = $(id);
+      if (!el) return;
+      el.addEventListener('change', () => {
+        if (el.value) { if ($('dateFromFilter')) $('dateFromFilter').value=''; if ($('dateToFilter')) $('dateToFilter').value=''; }
+      });
+    });
+
     $('clearSelection').addEventListener('click', () => { selected = null; expanded = new Set(); refreshKpis(); refreshMatrix(); refreshDetails(); });
-    ['yearFilter', 'monthFilter', 'fleetFilter', 'supplierFilter', 'searchFilter'].forEach(id => $(id).addEventListener('input', () => { refreshKpis(); refreshMatrix(); refreshDetails(); }));
+    ['yearFilter', 'monthFilter', 'fleetFilter', 'supplierFilter', 'searchFilter', 'dateFromFilter', 'dateToFilter'].forEach(id => $(id).addEventListener('input', () => { refreshKpis(); refreshMatrix(); refreshDetails(); }));
     $('exportCsv').addEventListener('click', () => { logAudit('EXPORTAR_CSV', 'fluxo-caixa.csv', {registros: records.length}); download('fluxo-caixa.csv', toCsv(filteredRecords()), 'text/csv;charset=utf-8'); });
     $('exportExcel').addEventListener('click', () => { logAudit('EXPORTAR_EXCEL', 'fluxo-caixa.xls', {registros: records.length}); download('fluxo-caixa.xls', toExcelHtml(filteredRecords()), 'application/vnd.ms-excel;charset=utf-8'); });
     $('exportAllExcel').addEventListener('click', () => download('base-fluxo-caixa.xls', toExcelHtml(records), 'application/vnd.ms-excel;charset=utf-8'));
